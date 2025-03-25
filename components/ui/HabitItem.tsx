@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import ProgressBar from './ProgressBar';
 
-export default function HabitItem({ habit, onComplete }: { habit: any, onComplete: () => void }) {
+export default function HabitItem({ habit, onComplete }: { habit: any, onComplete: (habitId: string, isCompletedToday: boolean) => void }) {
   const today = new Date().toISOString().split("T")[0]; // Get today's date in YYYY-MM-DD
   const [isCompletedToday, setIsCompletedToday] = useState(false);
 
@@ -12,20 +12,16 @@ export default function HabitItem({ habit, onComplete }: { habit: any, onComplet
   }, [habit.completedDays]);
 
   const handlePress = () => {
-    if (!isCompletedToday) {
-      onComplete();
-    }
+    onComplete(habit.id, isCompletedToday);  // Pass the habitId and the current completion status
   };
 
   return (
     <View style={styles.container}>
-      {/* Row for text and button */}
       <View style={styles.row}>
         <Text style={styles.text}>{habit.name}</Text>
         <Pressable 
           onPress={handlePress} 
           style={[styles.button, isCompletedToday && styles.disabledButton]} 
-          disabled={isCompletedToday} // ✅ Disables button if completed today
         >
           <Ionicons 
             name={isCompletedToday ? 'close' : 'checkmark'} 
@@ -35,7 +31,6 @@ export default function HabitItem({ habit, onComplete }: { habit: any, onComplet
         </Pressable>
       </View>
 
-      {/* Progress Bar and Streak/Goal Display */}
       <View style={styles.progressContainer}>
         <ProgressBar progress={habit.streak / habit.goal} />
         <Text style={styles.progressText}>{habit.streak}/{habit.goal}</Text>
@@ -69,7 +64,7 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   disabledButton: {
-    backgroundColor: '#7f8c8d', // ✅ Changes color when disabled
+    backgroundColor: '#7f8c8d',
   },
   progressContainer: {
     flexDirection: 'row',

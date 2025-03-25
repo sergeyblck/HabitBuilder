@@ -27,11 +27,9 @@ export default function SetDestroyHabit() {
   const [loading, setLoading] = useState(false);
 
   const handleSaveHabit = async () => {
-    // Trimmed values to prevent accidental spaces
     const trimmedHabit = habit.trim();
     const trimmedGoal = Number(goal);
 
-    // Validation checks
     if (!trimmedHabit) {
       alert("Habit name is required.");
       return;
@@ -49,24 +47,23 @@ export default function SetDestroyHabit() {
       return;
     }
 
-    setLoading(true); // Show loading state to prevent duplicate submissions
+    setLoading(true);
 
     try {
       await addHabit(trimmedHabit, trimmedGoal, reward.trim(), tries, times);
 
-      // Reset form fields only after successful submission
       setHabit('');
       setGoal('');
       setReward('');
       setTries(1);
       setTimes([]);
 
-      router.back(); // Navigate back to the previous screen
+      router.back();
     } catch (error) {
       console.error("Error saving habit:", error);
       alert("Failed to save habit. Please try again.");
     } finally {
-      setLoading(false); // Hide loading state after operation completes
+      setLoading(false);
     }
   };
 
@@ -156,7 +153,7 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     flex: 1,
-    justifyContent: 'flex-start',  // Change from 'center' to 'flex-start'
+    justifyContent: 'flex-start',
     alignItems: 'stretch',
   },
   scrollContainer: {
