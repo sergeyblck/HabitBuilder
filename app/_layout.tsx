@@ -4,10 +4,12 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { BuildHabitsProvider } from '@/context/BuildHabitsContext';
+import { DestroyHabitsProvider } from '@/context/DestroyHabitsContext';
 import 'react-native-reanimated';
 
 
-/// FONTS!!!!!!!!!!!!!!!!!!!
+/// FONTS!!!!!!!!!!!!!!!!!!!1S
 
 
 
@@ -34,10 +36,18 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
+          <BuildHabitsProvider>
+          <DestroyHabitsProvider>
+            <Stack>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="+not-found" />
+              <Stack.Screen name="SetHabit" options={{ title: 'Set Habit' }} />
+              <Stack.Screen name="SetDestroyHabit" options={{ title: 'Set destroy Habit' }} />
+              <Stack.Screen name="LoginScreen" options={{ title: 'Login' }} />
+              <Stack.Screen name="RegisterScreen" options={{ title: 'Register' }} />
+            </Stack>
+          </DestroyHabitsProvider>
+          </BuildHabitsProvider>
       <StatusBar style="auto" />
     </ThemeProvider>
   );
