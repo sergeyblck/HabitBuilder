@@ -2,11 +2,11 @@ import { firestore } from '@/services/Firebase';
 import { collection, addDoc, getDocs, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { Habit } from '@/types/HabitTypes';
 import { Int32 } from 'react-native/Libraries/Types/CodegenTypes';
-import { getAuth } from 'firebase/auth'; // Get current authenticated user
+import { getAuth } from 'firebase/auth';
+import { useRouter } from 'expo-router';
 
 const HABIT_COLLECTION = 'good_habits';
 
-// ✅ Add a habit with all attributes
 export const addHabit = async (name: string, goal: number, reward: string, tries: number, times: Date[]) => {
   try {
     const user = getAuth().currentUser;
@@ -14,7 +14,6 @@ export const addHabit = async (name: string, goal: number, reward: string, tries
       throw new Error("User is not authenticated");
     }
 
-    // Save the habit under the user's UID
     const userHabitsRef = collection(firestore, `users/${user.uid}/${HABIT_COLLECTION}`);
 
     await addDoc(userHabitsRef, {
@@ -22,10 +21,11 @@ export const addHabit = async (name: string, goal: number, reward: string, tries
       goal,
       reward,
       tries,
-      times: times.map(time => time.toISOString()), // Store times as ISO strings
+      times: times.map(time => time.toISOString()),
       streak: 0,
       createdAt: serverTimestamp(),
-      completedDays: [] // Empty array initially
+      completedDays: [],
+      backgroundColor: "FFFFFF",
     });
 
     console.log("Habit added successfully!");
@@ -37,7 +37,6 @@ export const addHabit = async (name: string, goal: number, reward: string, tries
 
 
 
-// ✅ Fetch habits correctly
 export const getHabits = async (): Promise<Habit[]> => {
   try {
     const user = getAuth().currentUser;
@@ -61,7 +60,8 @@ export const getHabits = async (): Promise<Habit[]> => {
         createdAt: data.createdAt && typeof data.createdAt.toDate === "function" 
           ? data.createdAt.toDate() 
           : new Date(),
-        completedDays: data.completedDays ?? []
+        completedDays: data.completedDays ?? [],
+        backgroundColor: data.backgroundColor ?? "FFFFFF",
       };
     });
   } catch (error) {
@@ -71,11 +71,11 @@ export const getHabits = async (): Promise<Habit[]> => {
 };
 
 
-// ✅ Subscribe to real-time updates with correct structure
 export const subscribeToHabits = (callback: (habits: Habit[]) => void) => {
   try {
     const user = getAuth().currentUser;
     if (!user) {
+      
       throw new Error("User is not authenticated");
     }
 
@@ -94,7 +94,9 @@ export const subscribeToHabits = (callback: (habits: Habit[]) => void) => {
           createdAt: data.createdAt && typeof data.createdAt.toDate === "function" 
             ? data.createdAt.toDate() 
             : new Date(),
-          completedDays: data.completedDays ?? []
+          completedDays: data.completedDays ?? [],
+          completedToday: data.completedToday ?? 0,
+          backgroundColor: data.backgroundColor ?? "FFFFFF",
         };
       }) as Habit[];
   

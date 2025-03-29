@@ -1,15 +1,17 @@
 import { View, Text, TextInput, Button, Modal, StyleSheet, TouchableOpacity } from 'react-native';
-import { useState, useContext } from 'react';
+import { useState, useContext, useEffect } from 'react';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { DestroyHabitsContext } from '@/context/DestroyHabitsContext';
 import { useRouter } from 'expo-router';
 import { ScrollView } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 
 export default function SetDestroyHabit() {
   const [habit, setHabit] = useState('');
   const [goal, setGoal] = useState('');
   const [reward, setReward] = useState('');
   const [tries, setTries] = useState(1);
+  const [label, setLabel] = useState('');
   const [times, setTimes] = useState<Date[]>([]);
   const habitsContext = useContext(DestroyHabitsContext);
   const router = useRouter(); 
@@ -21,8 +23,32 @@ export default function SetDestroyHabit() {
       </View>
     );
   }
-
   const { addHabit } = habitsContext;
+
+  const { habit: habitData } = useLocalSearchParams();
+  useEffect(() => {
+    if (habitData) {
+      const habitObj = JSON.parse(habitData as string); // Parse habit data
+      setHabit(habitObj.name);
+      setTries(Number(habitObj.tries)); 
+      // Convert Firestore Timestamp to Date objects
+      setTimes(
+        habitObj.times.map((time: any) => new Date(time.seconds * 1000)) // Convert seconds to milliseconds
+      );
+      setLabel(habitObj.label);
+      console.log(times);
+    }
+    else{
+      setLabel("Enter amount of tries:");
+    }
+  }, [habitData]);
+
+  // Update times when tries are changed
+  useEffect(() => {
+    const newTimes = new Array(tries).fill(new Date());
+    setTimes(newTimes);
+  }, [tries]);
+  console.log(times);
 
   const [loading, setLoading] = useState(false);
 
@@ -47,7 +73,7 @@ export default function SetDestroyHabit() {
       return;
     }
 
-    setLoading(true);
+    setLoading(true); 
 
     try {
       await addHabit(trimmedHabit, trimmedGoal, reward.trim(), tries, times);
@@ -63,7 +89,7 @@ export default function SetDestroyHabit() {
       console.error("Error saving habit:", error);
       alert("Failed to save habit. Please try again.");
     } finally {
-      setLoading(false);
+      setLoading(false); 
     }
   };
 
@@ -74,6 +100,42 @@ export default function SetDestroyHabit() {
       setTimes(newTimes);
     }
   };
+
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); // Format as HH:MM
+  };
+
+  const renderTimeRows = () => {
+    const rows: JSX.Element[] = []; // Explicitly define the type as JSX.Element[]
+    const chunkedTimes = [];
+  
+    for (let i = 0; i < times.length; i += 3) {
+      chunkedTimes.push(times.slice(i, i + 3));
+    }
+  
+    chunkedTimes.forEach((row, rowIndex) => {
+      rows.push(
+        <View key={rowIndex} style={styles.timeRow}>
+          {row.map((time, index) => (
+            <View key={index} style={styles.timeContainer}>
+              <DateTimePicker
+                value={time || new Date()}
+                mode="time"
+                is24Hour={true}
+                display="default"
+                onChange={(event, selectedTime) => handleTimeChange(event, selectedTime, rowIndex * 3 + index)}
+              />
+            <Text style={styles.timeText}>Try{(rowIndex*3)+(index+1)}</Text>
+            </View>
+          ))}
+        </View>
+      );
+    });
+  
+    return rows;
+  };
+  
+
   return (
     <View style={styles.modalContainer}>
       <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps='handled'>
@@ -107,7 +169,7 @@ export default function SetDestroyHabit() {
           placeholderTextColor="#aaa"
         />
 
-        <Text style={styles.label}>Number of Tries</Text>
+        <Text style={styles.label}>{label}</Text>
         <TextInput
           placeholder="Enter number of tries"
           keyboardType="numeric"
@@ -117,18 +179,7 @@ export default function SetDestroyHabit() {
           placeholderTextColor="#aaa"
         />
 
-        {Array.from({ length: tries }).map((_, index) => (
-          <View key={index} style={styles.timeContainer}>
-            <Text style={styles.label}>Try {index + 1} Time</Text>
-            <DateTimePicker
-              value={times[index] || new Date()}
-              mode="time"
-              is24Hour={true}
-              display="default"
-              onChange={(event, selectedTime) => handleTimeChange(event, selectedTime, index)}
-            />
-          </View>
-        ))}
+        {renderTimeRows()}
 
         <TouchableOpacity
           style={[styles.saveButton, loading && { opacity: 0.5 }]}
@@ -153,7 +204,8 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     flex: 1,
-    justifyContent: 'flex-start',
+    marginTop: 50,
+    justifyContent: 'flex-start', 
     alignItems: 'stretch',
   },
   scrollContainer: {
@@ -165,7 +217,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333',
     textAlign: 'center',
-    marginBottom: 10,
+    marginBottom: 30,
   },
   label: {
     fontSize: 14,
@@ -183,8 +235,19 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     color: '#333',
   },
-  timeContainer: {
+  timeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginBottom: 15,
+  },
+  timeContainer: {
+    width: '30%',
+  },
+  timeText: {
+    fontSize: 14,
+    marginLeft: 30,
+    marginTop: 5,
+    color: '#333',
   },
   saveButton: {
     backgroundColor: '#007AFF',

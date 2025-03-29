@@ -5,7 +5,6 @@ import { HapticTab } from '@/components/HapticTab';
 import TabBarBackground from '@/components/ui/TabBarBackground';
 import { Colors } from '@/constants/Colors';
 import { useColorScheme } from '@/hooks/useColorScheme';
-//import { HabitsProvider } from '@/context/BuildHabitsContext'; // Import HabitsProvider
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();

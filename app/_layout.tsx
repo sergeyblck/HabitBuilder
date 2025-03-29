@@ -15,7 +15,6 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/useColorScheme';
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
@@ -36,18 +35,21 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <BuildHabitsProvider>
+        <BuildHabitsProvider>
           <DestroyHabitsProvider>
             <Stack>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="+not-found" />
-              <Stack.Screen name="SetHabit" options={{ title: 'Set Habit' }} />
-              <Stack.Screen name="SetDestroyHabit" options={{ title: 'Set destroy Habit' }} />
-              <Stack.Screen name="LoginScreen" options={{ title: 'Login' }} />
-              <Stack.Screen name="RegisterScreen" options={{ title: 'Register' }} />
+              <Stack.Screen name="SetHabit" options={{ headerShown: false }} />
+              <Stack.Screen name="SetDestroyHabit" options={{ headerShown: false }} />
+              <Stack.Screen name="LoginScreen" options={{ headerShown: false }} />
+              <Stack.Screen name="RegisterScreen" options={{ headerShown: false }} />
+              <Stack.Screen name="HabitInfo" options={{ headerShown: false }} />
+              <Stack.Screen name="SetDefaultGoodHabits" options={{ headerShown: false }} />
+              <Stack.Screen name="SetDefaultBadHabits" options={{ headerShown: false }} />
             </Stack>
           </DestroyHabitsProvider>
-          </BuildHabitsProvider>
+        </BuildHabitsProvider>
       <StatusBar style="auto" />
     </ThemeProvider>
   );

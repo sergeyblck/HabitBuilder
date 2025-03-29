@@ -24,7 +24,8 @@ export const addHabit = async (name: string, goal: number, reward: string, tries
       times: times.map(time => time.toISOString()),
       streak: 0,
       createdAt: serverTimestamp(),
-      completedDays: []
+      completedDays: [],
+      completedToday: 0,
     });
 
     console.log("Habit added successfully!");
@@ -59,7 +60,8 @@ export const getHabits = async (): Promise<Habit[]> => {
         createdAt: data.createdAt && typeof data.createdAt.toDate === "function" 
           ? data.createdAt.toDate() 
           : new Date(),
-        completedDays: data.completedDays ?? []
+        completedDays: data.completedDays ?? [],
+        completedToday: 0,
       };
     });
   } catch (error) {
@@ -92,7 +94,8 @@ export const subscribeToHabits = (callback: (habits: Habit[]) => void) => {
           createdAt: data.createdAt && typeof data.createdAt.toDate === "function" 
             ? data.createdAt.toDate() 
             : new Date(),
-          completedDays: data.completedDays ?? []
+          completedDays: data.completedDays ?? [],
+          completedToday: 0,
         };
       }) as Habit[];
   
