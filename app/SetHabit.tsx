@@ -1,13 +1,17 @@
 import { View, Text, TextInput, Button, Modal, StyleSheet, TouchableOpacity, Switch, Platform } from 'react-native';
-import { useState, useContext, useEffect } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { Picker } from '@react-native-picker/picker';
+
 import { BuildHabitsContext } from '@/context/BuildHabitsContext';
 import { useRouter } from 'expo-router';
 import { ScrollView } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
+import { registerForPushNotificationsAsync, scheduleNotificationForTime } from '@/services/Notifications';
 
 export default function SetHabit() {
   const [habit, setHabit] = useState('');
+  const [id, setId] = useState('');
   const [goal, setGoal] = useState('');
   const [reward, setReward] = useState('');
   const [tries, setTries] = useState(1);
@@ -17,11 +21,15 @@ export default function SetHabit() {
   const [showTimeModal, setShowTimeModal] = useState(false);
   const [selectedTime, setSelectedTime] = useState<Date>(new Date());
   const [editIndex, setEditIndex] = useState<number | null>(null);
-  const [notificationTimes, setNotificationTimes] = useState<Date[]>([]);
-  const [activePickerIndex, setActivePickerIndex] = useState<number | null>(null);
-  
+  const [durationEnabled, setDurationEnabled] = useState(false);
+  const [durationModalVisible, setDurationModalVisible] = useState(false);
+  const [duration, setDuration] = useState({ hours: 0, minutes: 0, seconds: 0 });
+
+
+
+
   const habitsContext = useContext(BuildHabitsContext);
-  const router = useRouter(); 
+  const router = useRouter();
 
   if (!habitsContext) {
     return (
@@ -30,25 +38,44 @@ export default function SetHabit() {
       </View>
     );
   }
-  const { addHabit } = habitsContext;
+  const { addHabit, editHabit } = habitsContext;
 
-  const { habit: habitData } = useLocalSearchParams();
+  useEffect(() => {
+    registerForPushNotificationsAsync();
+  }, []);
+
+
+  const { habit: habitData, mode } = useLocalSearchParams();
+  const isEditMode = mode === 'edit';
+
   useEffect(() => {
     if (habitData) {
       const habitObj = JSON.parse(habitData as string);
+      setId(habitObj.id);
       setHabit(habitObj.name);
       setTries(Number(habitObj.tries));
-      setTimes(habitObj.times.map((time: any) => new Date(time.seconds * 1000)));
-      setLabel(habitObj.label);
+      setGoal(habitObj.goal ? habitObj.goal.toString() : '');
+      setReward(habitObj.reward);
+
+      const parsedTimes = habitObj.times.map((time: any) =>
+        typeof time === 'string' ? new Date(time) : new Date(time.seconds * 1000)
+      );
+      setTimes(parsedTimes);
+
+      setLabel(habitObj.label || "Amount of daily tries");
+      if (habitObj.duration) {
+        setDurationEnabled(true);
+        setDuration({
+          hours: habitObj.duration.hours || 0,
+          minutes: habitObj.duration.minutes || 0,
+          seconds: habitObj.duration.seconds || 0,
+        });
+      }
+
     } else {
-      setLabel("Enter amount of tries:");
+      setLabel("Amount of daily tries");
     }
   }, [habitData]);
-
-  useEffect(() => {
-    const newTimes = new Array(tries).fill(new Date());
-    setTimes(newTimes);
-  }, [tries]);
 
   const [loading, setLoading] = useState(false);
 
@@ -60,7 +87,7 @@ export default function SetHabit() {
       alert("Habit name is required.");
       return;
     }
-    if (!trimmedGoal || isNaN(Number(trimmedGoal)) || Number(trimmedGoal) <= 0) {
+    if (!trimmedGoal || isNaN(trimmedGoal) || trimmedGoal <= 0) {
       alert("Please enter a valid goal (a positive number).");
       return;
     }
@@ -68,21 +95,47 @@ export default function SetHabit() {
       alert("Number of tries must be a positive number.");
       return;
     }
-    if (times.length !== tries || times.some(time => !(time instanceof Date))) {
+    if (reminderEnabled && times.length !== tries || times.some(time => !(time instanceof Date))) {
       alert("Please set a valid time for each try.");
+      return;
+    }
+    if (
+      durationEnabled &&
+      (duration.hours === 0 && duration.minutes === 0 && duration.seconds === 0)
+    ) {
+      alert("Please enter a valid duration.");
       return;
     }
 
     setLoading(true);
 
-    try {
-      await addHabit(trimmedHabit, trimmedGoal, reward.trim(), tries, times);
+    const totalDuration = durationEnabled
+      ? {
+        hours: Number(duration.hours) || 0,
+        minutes: Number(duration.minutes) || 0,
+        seconds: Number(duration.seconds) || 0,
+      }
+      : undefined;
 
-      setHabit('');
-      setGoal('');
-      setReward('');
-      setTries(1);
-      setTimes([]);
+    alert(duration.minutes);
+
+    try {
+      if (isEditMode) {
+        await editHabit(id, trimmedHabit, trimmedGoal, (reward || '').trim(), tries, times, totalDuration);
+      } else {
+        await addHabit(trimmedHabit, trimmedGoal, (reward || '').trim(), tries, times, totalDuration);
+
+      }
+      
+      if (reminderEnabled) {
+        for (const time of times) {
+          await scheduleNotificationForTime(
+            time,
+            `Reminder: ${trimmedHabit}`,
+            `It's time to complete your habit: ${trimmedHabit}`
+          );
+        }
+      }
 
       router.back();
     } catch (error) {
@@ -93,9 +146,11 @@ export default function SetHabit() {
     }
   };
 
+
   return (
     <View style={styles.modalContainer}>
-      <Text style={styles.title}>New Habit</Text>
+      <Text style={styles.title}>{isEditMode ? 'Edit Habit' : 'New Habit'}</Text>
+
       <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps='handled'>
         <View style={styles.card}>
           <Text style={styles.cardLabel}>Habit Name</Text>
@@ -111,7 +166,7 @@ export default function SetHabit() {
         <View style={styles.card}>
           <View style={styles.row}>
             <View style={styles.inputHalf}>
-              <Text style={styles.cardLabel}>Goal (days)</Text>
+              <Text style={styles.cardLabel}>Goal</Text>
               <TextInput
                 keyboardType="numeric"
                 value={goal}
@@ -120,24 +175,44 @@ export default function SetHabit() {
                 style={styles.input}
                 placeholderTextColor="#aaa"
               />
+              <Text style={styles.inputHint}>Days to succeed</Text>
             </View>
 
             <View style={styles.inputHalf}>
-              <Text style={styles.cardLabel}>Max Tries</Text>
+              <Text style={styles.cardLabel}>Attempts</Text>
               <TextInput
                 keyboardType="numeric"
-                value={tries.toString()}
-                onChangeText={(text) => setTries(Number(text))}
+                value={tries === 0 ? '' : tries.toString()}
+                onChangeText={(text) => {
+                  const numeric = parseInt(text);
+                  setTries(text === '' ? 0 : isNaN(numeric) ? 1 : numeric);
+                }}
+                onBlur={() => {
+                  if (tries <= 0) setTries(1);
+                }}
                 placeholder="e.g. 3"
                 style={styles.input}
                 placeholderTextColor="#aaa"
               />
+              <Text style={styles.inputHint}>{label}</Text>
             </View>
           </View>
+        </View>
 
-          <Text style={styles.explanation}>
-            Your goal is how many days you want to stick with this habit. “Max tries” is the number of attempts allowed per day.
-          </Text>
+        <View style={[styles.card, styles.durationCard]}>
+          <View style={styles.durationRow}>
+            <Text style={styles.durationCenterLabel}>Duration</Text>
+            <TouchableOpacity
+              style={styles.durationPill}
+              onPress={() => setDurationModalVisible(true)}
+            >
+              <Text style={styles.addTime}>
+                {(duration.hours || duration.minutes || duration.seconds)
+                  ? `${duration.hours.toString().padStart(2, '0')}:${duration.minutes.toString().padStart(2, '0')}:${duration.seconds.toString().padStart(2, '0')}`
+                  : '+ Add Time'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={styles.card}>
@@ -160,7 +235,7 @@ export default function SetHabit() {
           </View>
           {reminderEnabled && (
             <View style={styles.pillContainer}>
-              {notificationTimes.map((time, index) => (
+              {times.map((time, index) => (
                 <TouchableOpacity
                   key={index}
                   style={styles.timePill}
@@ -189,16 +264,16 @@ export default function SetHabit() {
           )}
 
         </View>
-        
-      <TouchableOpacity
-        style={[styles.saveButton, loading && { opacity: 0.5 }]}
-        onPress={handleSaveHabit}
-        disabled={loading}
-      >
-        <Text style={styles.saveButtonText}>
-          {loading ? "Saving..." : "Save Habit"}
-        </Text>
-      </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.saveButton, loading && { opacity: 0.5 }]}
+          onPress={handleSaveHabit}
+          disabled={loading}
+        >
+          <Text style={styles.saveButtonText}>
+            {loading ? "Saving..." : "Save Habit"}
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
 
       {showTimeModal && (
@@ -212,7 +287,7 @@ export default function SetHabit() {
             <DateTimePicker
               value={selectedTime}
               mode="time"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              //display={Platform.OS === 'ios' ? 'spinner' : 'default'}
               onChange={(_, date) => {
                 if (date) setSelectedTime(date);
               }}
@@ -223,11 +298,11 @@ export default function SetHabit() {
                 style={styles.modalButton}
                 onPress={() => {
                   if (editIndex !== null) {
-                    const updated = [...notificationTimes];
+                    const updated = [...times];
                     updated[editIndex] = selectedTime;
-                    setNotificationTimes(updated);
+                    setTimes(updated);
                   } else {
-                    setNotificationTimes([...notificationTimes, selectedTime]);
+                    setTimes([...times, selectedTime]);
                   }
                   setShowTimeModal(false);
                 }}
@@ -239,9 +314,9 @@ export default function SetHabit() {
                 style={[styles.modalButton, { backgroundColor: '#ff3b30' }]}
                 onPress={() => {
                   if (editIndex !== null) {
-                    const updated = [...notificationTimes];
+                    const updated = [...times];
                     updated.splice(editIndex, 1);
-                    setNotificationTimes(updated);
+                    setTimes(updated);
                   }
                   setShowTimeModal(false);
                 }}
@@ -253,6 +328,97 @@ export default function SetHabit() {
         </TouchableOpacity>
       )}
 
+      {durationModalVisible && (
+        <TouchableOpacity
+          activeOpacity={1}
+          style={styles.modalOverlay}
+          onPressOut={() => setDurationModalVisible(false)}
+        >
+          <TouchableOpacity activeOpacity={1} style={styles.durationModal}>
+            <Text style={styles.cardLabel}>Set Duration</Text>
+
+            <View style={styles.durationPickerRow}>
+              <View style={styles.durationColumn}>
+                <Text style={styles.durationLabel}>Hours</Text>
+                <View style={styles.pickerWrapper}>
+                  <Picker
+                    selectedValue={duration.hours.toString()}
+                    onValueChange={(value) =>
+                      setDuration({ ...duration, hours: parseInt(value) })
+                    }
+                    style={styles.picker}
+                    itemStyle={styles.pickerItem}
+                  >
+                    {Array.from({ length: 24 }, (_, i) => (
+                      <Picker.Item key={i} label={i.toString()} value={i.toString()} />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
+
+              <View style={styles.durationColumn}>
+                <Text style={styles.durationLabel}>Minutes</Text>
+                <View style={styles.pickerWrapper}>
+                  <Picker
+                    selectedValue={duration.minutes.toString()}
+                    onValueChange={(value) =>
+                      setDuration({ ...duration, minutes: parseInt(value) })
+                    }
+                    style={styles.picker}
+                    itemStyle={styles.pickerItem}
+                  >
+                    {Array.from({ length: 60 }, (_, i) => (
+                      <Picker.Item key={i} label={i.toString()} value={i.toString()} />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
+
+              <View style={styles.durationColumn}>
+                <Text style={styles.durationLabel}>Seconds</Text>
+                <View style={styles.pickerWrapper}>
+                  <Picker
+                    selectedValue={duration.seconds.toString()}
+                    onValueChange={(value) =>
+                      setDuration({ ...duration, seconds: parseInt(value) })
+                    }
+                    style={styles.picker}
+                    itemStyle={styles.pickerItem}
+                  >
+                    {Array.from({ length: 60 }, (_, i) => (
+                      <Picker.Item key={i} label={i.toString()} value={i.toString()} />
+                    ))}
+                  </Picker>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.row}>
+              <TouchableOpacity
+                style={styles.modalButton}
+                onPress={() => {
+                  setDurationEnabled(true);
+                  setDurationModalVisible(false);
+                }
+                }
+              >
+                <Text style={styles.saveButtonText}>Confirm</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButton, { backgroundColor: '#ff3b30' }]}
+                onPress={() => {
+                  setDuration({ hours: 0, minutes: 0, seconds: 0 });
+                  setDurationModalVisible(false);
+                  setDurationEnabled(false);
+                }}
+              >
+                <Text style={styles.saveButtonText}>Clear</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -267,15 +433,12 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     justifyContent: 'flex-start',
+    backgroundColor: "#fff",
   },
   scrollContainer: {
-    backgroundColor: "#ffffff",
+    backgroundColor: "#fff",
     margin: 20,
     marginBottom: 20,
-    borderRadius: 30,
-    paddingTop: 30,
-    paddingLeft: 20,
-    paddingRight: 20,
   },
   card: {
     backgroundColor: '#fff',
@@ -309,10 +472,31 @@ const styles = StyleSheet.create({
   inputHalf: {
     flex: 1,
   },
-  explanation: {
+  inputHint: {
     fontSize: 12,
     color: '#999',
-    marginTop: 8,
+    marginTop: 4,
+    marginLeft: 4,
+  },
+  optionalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  optionalLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666',
+  },
+  optionalInput: {
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 15,
+    marginTop: 10,
+    borderColor: '#ccc',
+    borderWidth: 1,
+    color: '#333',
   },
   rewardInput: {
     backgroundColor: '#f9f9f9',
@@ -326,7 +510,7 @@ const styles = StyleSheet.create({
     minHeight: 80,
   },
   title: {
-    marginTop: 70,
+    marginTop: 60,
     fontSize: 20,
     fontWeight: 'bold',
     color: '#333',
@@ -376,7 +560,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     height: 32,
   },
-  
+
   removeTime: {
     color: '#999',
     fontWeight: '600',
@@ -421,5 +605,86 @@ const styles = StyleSheet.create({
     backgroundColor: '#007AFF',
     alignItems: 'center',
   },
-  
+  durationModal: {
+    width: '90%',
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 5,
+    alignItems: 'center',
+  },
+
+  durationPickerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    width: '100%',
+    paddingHorizontal: 10,
+  },
+
+  durationColumn: {
+    flex: 1,
+    alignItems: 'center',
+  },
+
+  durationLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#444',
+    marginBottom: 6,
+  },
+
+  pickerWrapper: {
+    backgroundColor: '#f2f6ff',
+    borderRadius: 12,
+    width: '100%',
+    height: 120,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+
+  picker: {
+    width: '100%',
+    height: 120,
+  },
+
+  pickerItem: {
+    fontSize: 20,
+    height: 120,
+    color: '#333',
+  },
+
+  durationCard: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    minHeight: 60,
+    justifyContent: 'center',
+  },
+
+  durationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  durationCenterLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+  },
+
+  durationPill: {
+    backgroundColor: '#e6f0ff',
+    paddingHorizontal: 15,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 32,
+  },
+
 });

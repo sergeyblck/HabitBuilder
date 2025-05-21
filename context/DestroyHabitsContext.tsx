@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect } from 'react';
-import { subscribeToHabits, addHabit } from '@/services/DestroyHabitsService'; 
+import { subscribeToHabits, addHabit, editHabit } from '@/services/DestroyHabitsService';
 import { Habit, HabitsContextType } from '@/types/HabitTypes';
 import { getAuth } from 'firebase/auth';
 
@@ -11,15 +11,9 @@ export function DestroyHabitsProvider({ children }: { children: React.ReactNode 
 
   useEffect(() => {
     const auth = getAuth();
-
     const unsubscribe = auth.onAuthStateChanged((user) => {
-      if (user) {
-        setIsUserLoggedIn(true);
-      } else {
-        setIsUserLoggedIn(false);
-      }
+      setIsUserLoggedIn(!!user);
     });
-
     return () => unsubscribe();
   }, []);
 
@@ -27,19 +21,15 @@ export function DestroyHabitsProvider({ children }: { children: React.ReactNode 
     if (isUserLoggedIn) {
       const unsubscribe = subscribeToHabits(setHabits);
       return () => {
-        if (unsubscribe) {
-          unsubscribe();
-        }
+        if (unsubscribe) unsubscribe();
       };
     }
   }, [isUserLoggedIn]);
 
-  if (!isUserLoggedIn) {
-    return <>{children}</>;
-  }
+  if (!isUserLoggedIn) return <>{children}</>;
 
   return (
-    <DestroyHabitsContext.Provider value={{ habits, addHabit }}>
+    <DestroyHabitsContext.Provider value={{ habits, addHabit, editHabit }}>
       {children}
     </DestroyHabitsContext.Provider>
   );

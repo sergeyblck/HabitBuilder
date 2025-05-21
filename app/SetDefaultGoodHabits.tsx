@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Image } from 'react-native';
 import { firestore } from '@/services/Firebase';
 import { collection, getDocs } from 'firebase/firestore';
-import { useRouter } from 'expo-router';
+import { SplashScreen, useRouter } from 'expo-router';
+import { Asset } from 'expo-asset';
 
 const SetDefaultGoodHabits = () => {
   const [habits, setHabits] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const router = useRouter();
+
 
   useEffect(() => {
     const fetchHabits = async () => {
@@ -28,16 +30,39 @@ const SetDefaultGoodHabits = () => {
     fetchHabits();
   }, []);
 
+  useEffect(() => {
+    const loadAssets = async () => {
+      try {
+        await SplashScreen.preventAutoHideAsync(); // Prevent flicker
+        await Asset.loadAsync([
+          require('@/assets/images/water.png'),
+          require('@/assets/images/exercise.png'),
+          require('@/assets/images/good_custom.png'),
+          require('@/assets/images/reading.png'),
+          require('@/assets/images/walking.png'),
+          require('@/assets/images/pills.png'),
+          require('@/assets/images/stretch.png'),
+          require('@/assets/images/running.png'),
+        ]);
+      } catch (err) {
+        console.warn('Error loading assets:', err);
+      } finally {
+        setLoading(false);
+        await SplashScreen.hideAsync();
+      }
+    };
+  
+    loadAssets();
+  }, []);
+
   const handleSelectHabit = (habit: any) => {
-    // Pass selected habit to SetHabit screen via params
     router.push({
       pathname: '/SetHabit',
-      params: { habit: JSON.stringify(habit) },
+      params: { habit: JSON.stringify(habit), mode: 'new' },
     });
   };
 
   const handleCustomHabit = () => {
-    // Navigate to SetHabit screen with no params for custom habit
     router.push({
       pathname: '/SetHabit',
       params: {},
@@ -52,14 +77,17 @@ const SetDefaultGoodHabits = () => {
     'Drink Water': require('@/assets/images/water.png'),
     'Exercise': require('@/assets/images/exercise.png'),
     'Custom Habit': require('@/assets/images/good_custom.png'),
-    // add more as needed
+    'Read a Book': require('@/assets/images/reading.png'),
+    'Walk': require('@/assets/images/walking.png'),
+    'Take a Pill': require('@/assets/images/pills.png'),
+    'Stretch': require('@/assets/images/stretch.png'),
+    'Run': require('@/assets/images/running.png'),
   };
   
   return (
     <View style={styles.container}>
       <Text style={styles.title}>New Habit</Text>
 
-      {/* Custom Habit Button */}
      <TouchableOpacity style={styles.habitItem} onPress={handleCustomHabit}>
            <View style={styles.habitRow}>
                      <Image

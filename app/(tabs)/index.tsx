@@ -5,16 +5,18 @@ import { useRouter } from 'expo-router';
 import HabitList from '@/components/ui/HabitList';
 import { firestore } from '@/services/Firebase';
 import { BuildHabitsContext } from '@/context/BuildHabitsContext';
-import { onAuthStateChanged, getAuth, User } from 'firebase/auth'; 
+import { onAuthStateChanged, getAuth, User } from 'firebase/auth';
 import { TouchableWithoutFeedback, Keyboard } from 'react-native';
 import ConfettiCannon from 'react-native-confetti-cannon';
 import { AddDefaultHabits } from '@/utils/AddDefaultHabits';
 import { Pressable } from 'react-native';
 import { TouchableOpacity } from 'react-native';
 import { useRef } from 'react';
+import { signOut } from 'firebase/auth';
 
 
-export default function BuildHabit() {
+const HABIT_COLLECTION = 'good_habits';
+export default function index() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -28,7 +30,7 @@ export default function BuildHabit() {
   const calendarRef = useRef<ScrollView>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'alphabetical' | 'tries' | 'done' | 'not_done'>('all');
-  
+  const [stopwatchHabit, setStopwatchHabit] = useState<any>(null);
 
   useEffect(() => {
     const auth = getAuth();
@@ -46,7 +48,7 @@ export default function BuildHabit() {
 
   const habitsContext = useContext(BuildHabitsContext);
   const today = new Date().toISOString().split('T')[0];
-  
+
   if (!habitsContext) {
     return (
       <View style={styles.loadingContainer}>
@@ -64,30 +66,101 @@ export default function BuildHabit() {
       calendarRef.current?.scrollToEnd({ animated: false });
     }, 0);
   }, []);
-  
+
+  const formatDate = (date: Date) =>
+    `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date
+      .getDate()
+      .toString()
+      .padStart(2, '0')}`;
 
   const handleComplete = async (habitId: string, isCompletedToday: boolean) => {
     try {
-      //handleAddPrebuiltHabits();
       const user = getAuth().currentUser;
       if (!user) throw new Error("User is not authenticated");
-  
-      const habitRef = doc(firestore, `users/${user.uid}/good_habits`, habitId);
-  
+
+      const habitRef = doc(firestore, `users/${user.uid}/${HABIT_COLLECTION}`, habitId);
       const habitDoc = await getDoc(habitRef);
       if (!habitDoc.exists()) throw new Error("Habit not found");
-  
       const habitData = habitDoc.data();
-      const currentStreak = habitData?.streak ?? 0;
-      const goal = habitData?.goal ?? 0;
-  
-      // Show modal before updating if goal will be reached
-      if (!isCompletedToday && currentStreak + 1 === goal) {
-        setHabitId(habitId); // Set habitId correctly here
-        setGoal(goal);
+      const today = new Date();
+      const dateStr = formatDate(selectedDate);
+      const todayStr = formatDate(today);
+
+      const log = habitData.log || {};
+      const logEntry = log[dateStr] || {
+        completed: 0,
+        tries: habitData.tries ?? 1,
+        goal: habitData.goal ?? 0,
+        streak: habitData.streak ?? 0,
+        isCompleted: false,
+      };
+
+      const newStreak = isCompletedToday
+        ? Math.max((logEntry.streak ?? 0) - 1, 0)
+        : (logEntry.streak ?? 0) + 1;
+
+      const updatePayload: any = {
+        [`log.${dateStr}.isCompleted`]: !isCompletedToday,
+        [`log.${dateStr}.streak`]: newStreak,
+        [`log.${dateStr}.goal`]: logEntry.goal,
+        [`log.${dateStr}.tries`]: logEntry.tries,
+        [`log.${dateStr}.completed`]: logEntry.completed,
+      };
+      if (logEntry.tries == 1) {
+        updatePayload.totalDone = (habitData.totalDone ?? 0) + (isCompletedToday ? -1 : 1);
+      }
+
+      await updateDoc(habitRef, updatePayload);
+      console.log("Habit completion toggled successfully for", dateStr, updatePayload);
+
+      // If dateStr is not today, propagate streak forward
+      if (dateStr !== todayStr) {
+        let currentDate = new Date(dateStr);
+        currentDate.setDate(currentDate.getDate() + 1);
+        while (currentDate <= today) {
+          const currentStr = formatDate(currentDate);
+
+          const existingLog = log[currentStr];
+          const previousStr = new Date(currentDate);
+          previousStr.setDate(previousStr.getDate() - 1);
+          const prevStr = formatDate(previousStr);
+          const prevLog = log[prevStr] || logEntry;
+
+          if (!existingLog) {
+            const cloned = {
+              goal: prevLog.goal,
+              tries: prevLog.tries,
+              streak: prevLog.streak,
+              completed: 0,
+              isCompleted: false,
+            };
+            await updateDoc(habitRef, {
+              [`log.${currentStr}`]: cloned,
+            });
+          } else {
+            let newStreak = existingLog.streak;
+            if (newStreak >= prevLog.streak && newStreak < existingLog.goal) {
+              if (!isCompletedToday) { newStreak = newStreak + 1; }
+              else { newStreak = newStreak - 1; }
+            }
+
+            await updateDoc(habitRef, {
+              [`log.${currentStr}.streak`]: newStreak,
+            });
+            console.log("Habit completion toggled successfully for", currentStr, newStreak);
+          }
+
+          currentDate.setDate(currentDate.getDate() + 1);
+        }
+      }
+
+      // Trigger modal only if today’s streak == goal
+      const todayLog = habitData.log?.[todayStr];
+      if (!isCompletedToday && todayLog?.streak + 1 === todayLog?.goal) {
+        setHabitId(habitId);
+        setGoal(todayLog.goal);
         setIsModalVisible(true);
-      
-        
+
         Animated.timing(congratsAnimation, {
           toValue: 1,
           duration: 1000,
@@ -95,106 +168,229 @@ export default function BuildHabit() {
           useNativeDriver: true,
         }).start();
       }
-  
-      // Proceed with the actual update
-      await updateDoc(habitRef, {
-        completedDays: isCompletedToday ? arrayRemove(today) : arrayUnion(today),
-        streak: increment(isCompletedToday ? -1 : 1),
-      });
-
-  
-      console.log("Habit completion toggled successfully!");
     } catch (error) {
       console.error("Error updating habit:", error);
     }
   };
-  
- 
+
+
+
+  const handleUpdateCompletedToday = async (habitId: string, op: 'inc' | 'dec') => {
+    try {
+      const user = getAuth().currentUser;
+      if (!user) throw new Error("User is not authenticated");
+
+      const selectedDateStr = selectedDate.toISOString().split("T")[0];
+      const habitRef = doc(firestore, `users/${user.uid}/${HABIT_COLLECTION}`, habitId);
+      const habitSnap = await getDoc(habitRef);
+      if (!habitSnap.exists()) throw new Error("Habit not found");
+
+      const data = habitSnap.data();
+      const log = data.log || {};
+      const current = log[selectedDateStr] || {
+        completed: 0,
+        isCompleted: false,
+        streak: 0,
+        goal: data.goal ?? 0,
+        tries: data.tries ?? 1,
+      };
+
+      const updatedCompleted =
+        op === 'inc' ? current.completed + 1 : Math.max(current.completed - 1, 0);
+      const isCompleted = updatedCompleted >= current.tries;
+
+      const totalDoneChange = op === 'inc' ? 1 : -1;
+      const newTotalDone = (data.totalDone ?? 0) + totalDoneChange;
+
+      const updatePayload = {
+        [`log.${selectedDateStr}.completed`]: updatedCompleted,
+        [`log.${selectedDateStr}.isCompleted`]: isCompleted,
+        [`log.${selectedDateStr}.goal`]: current.goal,
+        [`log.${selectedDateStr}.tries`]: current.tries,
+        [`log.${selectedDateStr}.streak`]: current.streak,
+        totalDone: newTotalDone,
+      };
+
+
+      await updateDoc(habitRef, updatePayload);
+      console.log("Habit updated for", selectedDateStr, updatePayload);
+
+      // Call onComplete only if just completed the final try
+      if (op === 'inc' && updatedCompleted === current.tries) {
+        handleComplete(habitId, false);
+      } else if (op === 'dec' && updatedCompleted === current.tries - 1) {
+        handleComplete(habitId, true);
+      }
+
+    } catch (error) {
+      console.error("Error updating completed count:", error);
+    }
+  };
+
+
+
   const handleReset = async (habitId: string) => {
     const user = getAuth().currentUser;
     if (!user) throw new Error("User is not authenticated");
-  
-    const habitRef = doc(firestore, `users/${user.uid}/good_habits`, habitId);
-    const today = new Date().toISOString().split("T")[0];
-  
+
+    const habitRef = doc(firestore, `users/${user.uid}/${HABIT_COLLECTION}`, habitId);
+    const dateStr = selectedDate.toISOString().split("T")[0];
+
     try {
-      // Remove today's date from completedDays and decrement the streak by 1
-      await updateDoc(habitRef, {
-        completedDays: arrayRemove(today),
-        streak: increment(-1),
-      });
-  
-      // Close the modal after resetting
+      const habitDoc = await getDoc(habitRef);
+      if (!habitDoc.exists()) throw new Error("Habit not found");
+
+      const habitData = habitDoc.data();
+      const log = habitData.log || {};
+      const logEntry = log[dateStr] || {};
+
+      const updatedStreak = Math.max((logEntry.streak ?? 1) - 1, 0);
+      const updatedCompleted = Math.max((logEntry.completed - 1), 0);
+
+      const resetPayload = {
+        [`log.${dateStr}.isCompleted`]: false,
+        [`log.${dateStr}.completed`]: updatedCompleted,
+        [`log.${dateStr}.streak`]: updatedStreak,
+        [`log.${dateStr}.tries`]: logEntry.tries ?? habitData.tries ?? 1,
+        [`log.${dateStr}.goal`]: logEntry.goal ?? habitData.goal ?? 0,
+        totalDone: habitData.totalDone - 1,
+      };
+
+      await updateDoc(habitRef, resetPayload);
+
       setIsModalVisible(false);
-      console.log("Action has been reset to the previous state.");
+      console.log("Habit reset for", dateStr);
     } catch (error) {
       console.error("Error resetting habit:", error);
     }
   };
-  
-  
-  
 
   const handleSetNewGoal = async () => {
     const user = getAuth().currentUser;
     if (!user) {
       throw new Error("User is not authenticated");
     }
-  
-    const habitRef = doc(firestore, `users/${user.uid}/good_habits`, habitId);
-    await updateDoc(habitRef, {
-      goal: parseInt(newGoal),
-      reward: newReward,
-      streak: 1,
-      completedDays: arrayUnion(new Date().toISOString().split("T")[0]),
-    });
-  
-    // Close the current modal first before opening the new one
-    setIsModalVisible(false); // Close the first modal
-    setIsNewGoalModalVisible(false); // Open the new goal modal
-  
-    console.log("New goal and reward set successfully!");
+
+    const habitRef = doc(firestore, `users/${user.uid}/${HABIT_COLLECTION}`, habitId);
+    const dateStr = new Date().toISOString().split("T")[0];
+
+    try {
+      const habitSnap = await getDoc(habitRef);
+      if (!habitSnap.exists()) {
+        throw new Error("Habit not found");
+      }
+
+      const habitData = habitSnap.data();
+      const existingCompleted = habitData?.log?.[dateStr]?.completed ?? 0;
+
+      await updateDoc(habitRef, {
+        reward: newReward,
+        goalsAchieved: habitData.goalsAchieved + 1,
+        [`log.${dateStr}.goal`]: parseInt(newGoal),
+        [`log.${dateStr}.streak`]: 1,
+        [`log.${dateStr}.isCompleted`]: true,
+        [`log.${dateStr}.completed`]: existingCompleted,
+      });
+
+      setIsModalVisible(false);
+      setIsNewGoalModalVisible(false);
+
+      console.log("New goal and reward set successfully!");
+    } catch (error) {
+      console.error("Error setting new goal:", error);
+    }
   };
 
+
+  const maybeCloneLogForSelectedDate = async (habit: any, selectedDate: Date) => {
+    const selectedDateStr = selectedDate.toISOString().split("T")[0];
+    const createdDate = new Date(habit.createdAt);
+    if (selectedDate < createdDate) return null;
+
+    const log = habit.log || {};
+    if (log[selectedDateStr]) return null;
+
+    const previousDates = Object.keys(log).filter(date => new Date(date) < selectedDate);
+    if (previousDates.length === 0) return null;
+
+    const latestDate = previousDates.sort().reverse()[0];
+    const base = log[latestDate];
+
+    const newLogEntry = {
+      goal: base.goal,
+      tries: base.tries,
+      streak: base.streak,
+      completed: 0,
+      isCompleted: false,
+    };
+
+    const user = getAuth().currentUser;
+    if (!user) return;
+
+    const habitRef = doc(firestore, `users/${user.uid}/${HABIT_COLLECTION}`, habit.id);
+    await updateDoc(habitRef, {
+      [`log.${selectedDateStr}`]: newLogEntry,
+    });
+
+    console.log(`Copied log to ${selectedDateStr} for habit ${habit.name}`);
+  };
+
+
   const filteredHabits = () => {
-    let filtered = habitsContext.habits;
-  
+    const selectedDateStr = selectedDate.toISOString().split('T')[0];
+    const filtered = habitsContext.habits;
+
+    const relevantHabits = filtered.filter(habit => {
+      const createdDate = new Date(habit.createdAt);
+      return selectedDate >= createdDate;
+    });
+
+    // Trigger log creation if missing
+    relevantHabits.forEach(habit => {
+      maybeCloneLogForSelectedDate(habit, selectedDate);
+    });
+
+    const transformed = relevantHabits.map(habit => {
+      const logEntry = habit.log?.[selectedDateStr];
+
+      return {
+        ...habit,
+        goal: logEntry?.goal ?? 0,
+        tries: logEntry?.tries ?? 1,
+        streak: logEntry?.streak ?? 0,
+        completed: logEntry?.completed ?? 0,
+        isCompleted: logEntry?.isCompleted ?? false,
+        dateUsed: selectedDateStr,
+      };
+    });
+
+    let result = transformed;
     if (searchQuery.trim()) {
-      filtered = filtered.filter(habit =>
+      result = result.filter(habit =>
         habit.name.toLowerCase().includes(searchQuery.toLowerCase())
       );
     }
-  
+
     switch (filterType) {
       case 'alphabetical':
-        filtered = [...filtered].sort((a, b) => a.name.localeCompare(b.name));
+        result = [...result].sort((a, b) => a.name.localeCompare(b.name));
         break;
       case 'tries':
-        filtered = [...filtered].sort((a, b) => b.tries - a.tries);
+        result = [...result].sort((a, b) => b.tries - a.tries);
         break;
       case 'done':
-        filtered = filtered.filter(habit =>
-          habit.completedDays?.some((d: any) => {
-            const dateStr = d instanceof Date ? d.toISOString().split('T')[0] : d;
-            return dateStr === today;
-          })
-        );
+        result = result.filter(h => h.isCompleted);
         break;
-      
       case 'not_done':
-        filtered = filtered.filter(habit =>
-          !habit.completedDays?.some((d: any) => {
-            const dateStr = d instanceof Date ? d.toISOString().split('T')[0] : d;
-            return dateStr === today;
-          })
-        );
-        break;
-      default:
+        result = result.filter(h => !h.isCompleted);
         break;
     }
-  
-    return filtered;
+
+    return result;
   };
+
+
+
   const generatePastWeek = () => {
     const days = [];
     for (let i = 30; i >= 0; i--) {
@@ -204,8 +400,46 @@ export default function BuildHabit() {
     }
     return days;
   };
-  
-  
+  const [showStopwatchModal, setShowStopwatchModal] = useState(false);
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const [isRunning, setIsRunning] = useState(false);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const totalSeconds = (stopwatchHabit?.duration?.hours ?? 0) * 3600 +
+    (stopwatchHabit?.duration?.minutes ?? 0) * 60 +
+    (stopwatchHabit?.duration?.seconds ?? 0);
+
+  const reached70Percent = elapsedTime >= Math.floor(totalSeconds * 0.7);
+
+  const startStopwatch = () => {
+    setIsRunning(true);
+    intervalRef.current = setInterval(() => {
+      setElapsedTime(prev => prev + 1);
+    }, 1000);
+  };
+
+  const pauseStopwatch = () => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setIsRunning(false);
+  };
+
+  const resetStopwatch = () => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setElapsedTime(0);
+    setIsRunning(false);
+    setShowStopwatchModal(false);
+    setStopwatchHabit(null);
+  };
+
+  const finishStopwatch = () => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setIsRunning(false);
+    setElapsedTime(0);
+    setShowStopwatchModal(false);
+    setStopwatchHabit(null);
+    if (stopwatchHabit?.tries > 1) handleUpdateCompletedToday(stopwatchHabit.id, 'inc');
+    else handleComplete(stopwatchHabit.id, false);
+  };
 
   return (
     <View style={styles.container}>
@@ -270,23 +504,29 @@ export default function BuildHabit() {
             };
             setFilterType(prev => next[prev]);
           }}
-          >
+        >
           <Text style={styles.filterButtonText}>
             {filterType === 'all' ? 'All' :
-            filterType === 'alphabetical' ? 'A–Z' :
-            filterType === 'tries' ? 'Tries' :
-            filterType === 'done' ? 'Done' : 'Not Done'}
+              filterType === 'alphabetical' ? 'A–Z' :
+                filterType === 'tries' ? 'Tries' :
+                  filterType === 'done' ? 'Done' : 'Not Done'}
           </Text>
         </TouchableOpacity>
       </View>
 
-    
+
       <View style={styles.listWrapper}>
-        <HabitList 
-          habits={filteredHabits()} 
-          habitType="good_habits" 
-          onComplete={handleComplete} 
+        <HabitList
+          habits={filteredHabits()}
+          habitType={HABIT_COLLECTION}
+          onComplete={handleComplete}
+          onUpdateCompletedToday={handleUpdateCompletedToday}
+          onStartStopwatch={(habit) => {
+            setStopwatchHabit(habit);
+            setShowStopwatchModal(true);
+          }}
         />
+
       </View>
 
       <Pressable style={styles.floatingButton} onPress={() => router.push('../SetDefaultGoodHabits')}>
@@ -299,11 +539,11 @@ export default function BuildHabit() {
           <View style={styles.overlay}>
             <View style={styles.cardModal}>
 
-              <ConfettiCannon 
-                count={200} 
-                origin={{ x: 0.5, y: 0 }} 
-                fadeOut={true} 
-                fallSpeed={2500} 
+              <ConfettiCannon
+                count={200}
+                origin={{ x: 0.5, y: 0 }}
+                fadeOut={true}
+                fallSpeed={2500}
               />
 
               {/* Medal Icon */}
@@ -406,7 +646,53 @@ export default function BuildHabit() {
         </TouchableWithoutFeedback>
       </Modal>
 
+      {stopwatchHabit && showStopwatchModal && (
+        <View style={styles.modalOverlay}>
+          <View style={styles.stopwatchCard}>
+            <Text style={styles.stopwatchEmoji}>⏱️</Text>
+            <Text style={styles.elapsedLabel}>Elapsed</Text>
 
+            <Text style={styles.elapsedTime}>
+              {String(Math.floor(elapsedTime / 3600)).padStart(2, '0')}:
+              {String(Math.floor((elapsedTime % 3600) / 60)).padStart(2, '0')}:
+              {String(elapsedTime % 60).padStart(2, '0')}
+            </Text>
+
+            <Text style={styles.goalTimeLabel}>
+              Goal: {String(Math.floor(totalSeconds / 3600)).padStart(2, '0')}:
+              {String(Math.floor((totalSeconds % 3600) / 60)).padStart(2, '0')}:
+              {String(totalSeconds % 60).padStart(2, '0')}
+            </Text>
+
+            <View style={styles.modalButtonGroup}>
+              <TouchableOpacity
+                style={[styles.modalButtonCompact, styles.borderButton]}
+                onPress={resetStopwatch}
+              >
+                <Text style={[styles.modalButtonText, styles.borderButtonText]}>Reset</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalButtonCompact, styles.lightPrimary]}
+                onPress={isRunning ? pauseStopwatch : startStopwatch}
+              >
+                <Text style={styles.modalButtonText}>{isRunning ? 'Pause' : 'Start'}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.modalButtonCompact,
+                  reached70Percent ? styles.primary : styles.disabledButton,
+                ]}
+                disabled={!reached70Percent}
+                onPress={finishStopwatch}
+              >
+                <Text style={styles.modalButtonText}>Finish</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
 
     </View>
   );
@@ -429,7 +715,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingBottom: 20,
   },
-  
+
   searchFilterRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -439,7 +725,7 @@ const styles = StyleSheet.create({
     width: '100%',
     marginBottom: 10,
   },
-  
+
   searchBox: {
     flex: 1,
     backgroundColor: '#e6f0ff',
@@ -447,41 +733,41 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  
+
   searchInput: {
     fontSize: 14,
     color: '#333',
   },
-  
+
   filterButton: {
     backgroundColor: '#e6f0ff',
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  
+
   filterButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#007AFF',
   },
-  
+
   listWrapper: {
     flex: 1,
     width: '100%',
-    marginBottom: 150,
+    marginBottom: 70,
   },
-  
+
   header: {
     marginTop: 40,
     fontSize: 22,
     fontWeight: '600',
-    color: '#333',  
-    borderBottomWidth:2,
+    color: '#333',
+    borderBottomWidth: 2,
     borderColor: '#ccc',
-    alignSelf:'center',
-    justifyContent:'center',
-    textAlign:'center',
+    alignSelf: 'center',
+    justifyContent: 'center',
+    textAlign: 'center',
     width: '100%',
     paddingBottom: 40,
   },
@@ -491,19 +777,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   calendarWrapper: {
-    borderBottomWidth:1,
-    borderColor:'#f0f4ff',
-    paddingBottom:5,
+    borderBottomWidth: 1,
+    borderColor: '#f0f4ff',
+    paddingBottom: 5,
     width: '100%',
     marginBottom: 25,
-    paddingRight:10,
+    paddingRight: 8,
   },
-  
+
   calendarRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  
+
   calendarDay: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -514,26 +800,26 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     width: 55,
   },
-  
+
   calendarDaySelected: {
     backgroundColor: '#007AFF',
   },
-  
+
   calendarDayText: {
     fontSize: 12,
     color: '#555',
   },
-  
+
   calendarDateNumber: {
     fontSize: 16,
     color: '#333',
     marginTop: 2,
   },
-  
-  
+
+
   floatingButton: {
     position: 'absolute',
-    bottom: 100,
+    bottom: 20,
     right: 20,
     backgroundColor: '#e6f0ff',
     paddingVertical: 12,
@@ -545,12 +831,12 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 4,
     zIndex: 999,
-  },  
+  },
   floatingButtonText: {
     color: '#007AFF',
     fontSize: 16,
     fontWeight: '600',
-  },  
+  },
   modalContainer: {
     flex: 1,
     justifyContent: 'flex-start',
@@ -620,13 +906,13 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     backgroundColor: '#2d8eff', // Blue for the save action
-  },overlay: {
+  }, overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  
+
   cardModal: {
     width: '85%',
     backgroundColor: '#fff',
@@ -638,7 +924,7 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 6,
     alignItems: 'center',
-  },  
+  },
   rewardText: {
     fontSize: 16,
     color: '#007AFF',
@@ -646,11 +932,11 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     textAlign: 'center',
   },
-  
+
   primary: {
     backgroundColor: '#007AFF',
   },
-  
+
   danger: {
     backgroundColor: '#FF3B30',
   },
@@ -658,7 +944,7 @@ const styles = StyleSheet.create({
     fontSize: 72,
     marginBottom: 12,
   },
-  
+
   modalTitle: {
     fontSize: 28,
     fontWeight: '700',
@@ -666,19 +952,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 4,
   },
-  
+
   modalSubtitle: {
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
     marginBottom: 35,
   },
-  
+
   rewardContainer: {
     alignItems: 'center',
     marginBottom: 50,
   },
-  
+
   rewardLabel: {
     fontSize: 13,
     color: '#aaa',
@@ -686,61 +972,61 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
-  
+
   rewardBigText: {
     fontSize: 26,
     fontWeight: '800',
     color: '#007AFF',
     textAlign: 'center',
   },
-  
+
   modalButtonGroup: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     gap: 10,
     width: '100%',
   },
-  
+
   modalButtonCompact: {
     flex: 1,
     paddingVertical: 10,
     borderRadius: 10,
     alignItems: 'center',
   },
-  
+
   // Reset button soft border
-borderButton: {
-  borderWidth: 1.5,
-  borderColor: '#e57373', // muted red
-  backgroundColor: 'transparent',
-  opacity: 0.85,
-},
+  borderButton: {
+    borderWidth: 1.5,
+    borderColor: '#e57373', // muted red
+    backgroundColor: 'transparent',
+    opacity: 0.85,
+  },
 
-borderButtonText: {
-  color: '#e57373',
-  fontSize: 13,
-  fontWeight: '500',
-},
+  borderButtonText: {
+    color: '#e57373',
+    fontSize: 13,
+    fontWeight: '500',
+  },
 
-// Saturated light blue + elevation
-lightPrimary: {
-  backgroundColor: '#4FA3FF',
-  shadowColor: '#000',
-  shadowOffset: { width: 0, height: 1 },
-  shadowOpacity: 0.1,
-  shadowRadius: 2,
-  elevation: 2,
-},
+  // Saturated light blue + elevation
+  lightPrimary: {
+    backgroundColor: '#4FA3FF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
 
-// Optional: more crisp modalButtonText
-modalButtonText: {
-  fontSize: 14,
-  fontWeight: '600',
-  color: '#fff',
-  textAlign: 'center',
-},
+  // Optional: more crisp modalButtonText
+  modalButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+    textAlign: 'center',
+  },
 
-  
+
   modalButton: {
     flex: 1,
     paddingVertical: 12,
@@ -753,7 +1039,7 @@ modalButtonText: {
     justifyContent: 'center',
     alignItems: 'center',
   },
-  
+
   newGoalCardModal: {
     width: '85%',
     backgroundColor: '#fff',
@@ -766,28 +1052,28 @@ modalButtonText: {
     elevation: 6,
     alignItems: 'center',
   },
-  
+
   newGoalHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     flexWrap: 'wrap',
     marginBottom: 30,
-    marginTop:10,
+    marginTop: 10,
   },
-  
+
   newGoalModalTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#333',
   },
-  
+
   newGoalHabitName: {
     fontSize: 19,
     fontWeight: '700',
     color: '#007AFF',
   },
-  
+
   newGoalCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
@@ -800,14 +1086,14 @@ modalButtonText: {
     shadowRadius: 8,
     elevation: 2,
   },
-  
+
   newGoalCardLabel: {
     fontSize: 14,
     fontWeight: '600',
     color: '#333',
-    marginLeft:2,
+    marginLeft: 2,
   },
-  
+
   newGoalInput: {
     backgroundColor: '#e6f0ff',
     borderRadius: 10,
@@ -815,7 +1101,7 @@ modalButtonText: {
     fontSize: 16,
     color: '#333',
   },
-  
+
   newGoalRewardInput: {
     marginTop: 8,
     backgroundColor: '#f9f9f9',
@@ -828,7 +1114,7 @@ modalButtonText: {
     textAlignVertical: 'top',
     minHeight: 80,
   },
-  
+
   newGoalModalButtonGroup: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -836,20 +1122,20 @@ modalButtonText: {
     width: '100%',
     marginTop: 10,
   },
-  
+
   newGoalModalButtonCompact: {
     flex: 1,
     paddingVertical: 10,
     borderRadius: 10,
     alignItems: 'center',
   },
-  
+
   newGoalModalButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#fff',
   },
-  
+
   newGoalPrimary: {
     backgroundColor: '#4FA3FF',
     shadowColor: '#000',
@@ -858,14 +1144,14 @@ modalButtonText: {
     shadowRadius: 2,
     elevation: 2,
   },
-  
+
   newGoalBorderButton: {
     borderWidth: 1.5,
     borderColor: '#e57373',
     backgroundColor: 'transparent',
     opacity: 0.85,
   },
-  
+
   newGoalBorderButtonText: {
     color: '#e57373',
     fontSize: 13,
@@ -887,7 +1173,7 @@ modalButtonText: {
     shadowRadius: 8,
     elevation: 2,
   },
-  
+
   newGoalInlineInput: {
     backgroundColor: '#e6f0ff',
     borderRadius: 10,
@@ -897,7 +1183,157 @@ modalButtonText: {
     width: '45%',
     textAlign: 'center',
   },
+  cardLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 8,
+  },
+
+  modalOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+  },
+
+
+  stopwatchModal: {
+    width: '90%',
+    maxWidth: 360,
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+
+    // Shadow for iOS
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+
+    // Shadow for Android
+    elevation: 10,
+  },
+
+  timerText: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 12,
+  },
+
+  stopwatchRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    width: '100%',
+    gap: 10,
+  },
+
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  stopwatchLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#888',
+    marginBottom: 4,
+  },
+
+  stopwatchElapsed: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 6,
+  },
+
+  goalLabel: {
+    fontSize: 12,
+    color: '#aaa',
+    marginBottom: 20,
+  },
+
+  stopwatchRed: {
+    backgroundColor: '#FF3B30',
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+
+  stopwatchBlue: {
+    backgroundColor: '#4FA3FF',
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+
+  stopwatchPrimary: {
+    backgroundColor: '#007AFF',
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+
+  stopwatchDisabled: {
+    backgroundColor: '#ccc',
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  stopwatchCard: {
+    width: '85%',
+    backgroundColor: '#fff',
+    borderRadius: 24,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 6,
+    alignItems: 'center',
+  },
+  
+  stopwatchEmoji: {
+    fontSize: 42,
+    marginBottom: 8,
+  },
+  
+  elapsedLabel: {
+    fontSize: 13,
+    color: '#999',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  
+  elapsedTime: {
+    fontSize: 36,
+    fontWeight: '700',
+    color: '#333',
+    marginVertical: 6,
+  },
+  
+  goalTimeLabel: {
+    fontSize: 13,
+    color: '#aaa',
+    marginBottom: 24,
+  },
+  
+  disabledButton: {
+    backgroundColor: '#ccc',
+  },
   
 });
 
-  
+

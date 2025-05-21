@@ -4,31 +4,49 @@ import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { Timestamp } from 'firebase/firestore';
 
 export const AddDefaultHabits = async () => {
-  const prebuiltHabitsRef = collection(firestore, 'default_bad_habits');
+  const prebuiltHabitsRef = collection(firestore, 'default_good_habits');
     console.log("Here");
     const habits = [
         {
-          name: "Stop smoking",
-          tries: 0,
+          name: "Read a Book",
+          tries: 1,
           times: [
-            Timestamp.fromDate(new Date('2023-01-01T12:00:00Z')), 
-            Timestamp.fromDate(new Date('2023-01-01T17:00:00Z')),
-            Timestamp.fromDate(new Date('2023-01-01T22:00:00Z')),
+            Timestamp.fromDate(new Date('2023-01-01T22:00:00Z')), 
           ],
-          label: "Maximum amount of smoking per day",
-          icon: "cafe", // ☕️ cigarette-looking icon from Ionicons
+          label: "Amount of daily sets of reading",
         },
         {
-          name: 'Stop drinking Alcohol',
-          tries: 0,
+          name: "Walk",
+          tries: 1,
           times: [
-            Timestamp.fromDate(new Date('2023-01-01T19:00:00Z'))
+            Timestamp.fromDate(new Date('2023-01-01T20:00:00Z')), 
           ],
-          duration: [
-            Timestamp.fromDate(new Date('2023-01-01T00:30:00Z'))
+          label: "Amount of daily walkings",
+        },
+        {
+          name: "Run",
+          tries: 1,
+          times: [
+            Timestamp.fromDate(new Date('2023-01-01T20:00:00Z')), 
           ],
-          label: "Maximum amount of drinks per day",
-          icon: "wine-outline", // 🍷 wine glass icon from Ionicons
+          label: "Amount of daily runnings",
+        },
+        {
+          name: "Stretch",
+          tries: 2,
+          times: [
+            Timestamp.fromDate(new Date('2023-01-01T10:00:00Z')), 
+            Timestamp.fromDate(new Date('2023-01-01T22:00:00Z')), 
+          ],
+          label: "Amount of daily stretches",
+        },
+        {
+          name: "Take a Pill",
+          tries: 1,
+          times: [
+            Timestamp.fromDate(new Date('2023-01-01T10:00:00Z')),
+          ],
+          label: "Amount of daily pills",
         },
       ];
       

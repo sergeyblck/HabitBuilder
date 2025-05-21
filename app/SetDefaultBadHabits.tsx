@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Image } from 'react-native';
 import { firestore } from '@/services/Firebase';
 import { collection, getDocs } from 'firebase/firestore';
-import { useRouter } from 'expo-router';
+import { SplashScreen, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Asset } from 'expo-asset';
 
 
 const SetDefaultBadHabits = () => {
@@ -29,6 +30,27 @@ const SetDefaultBadHabits = () => {
 
     fetchHabits();
   }, []);
+
+  
+    useEffect(() => {
+      const loadAssets = async () => {
+        try {
+          await SplashScreen.preventAutoHideAsync(); // Prevent flicker
+          await Asset.loadAsync([
+            require('@/assets/images/smoking.png'),
+            require('@/assets/images/alcohol.png'),
+            require('@/assets/images/custom.png'),
+          ]);
+        } catch (err) {
+          console.warn('Error loading assets:', err);
+        } finally {
+          setLoading(false);
+          await SplashScreen.hideAsync();
+        }
+      };
+    
+      loadAssets();
+    }, []);
 
   const handleSelectHabit = (habit: any) => {
     // Pass selected habit to SetHabit screen via params

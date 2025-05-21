@@ -7,6 +7,7 @@ import { useEffect } from 'react';
 import { BuildHabitsProvider } from '@/context/BuildHabitsContext';
 import { DestroyHabitsProvider } from '@/context/DestroyHabitsContext';
 import 'react-native-reanimated';
+import * as Notifications from 'expo-notifications';
 
 
 /// FONTS!!!!!!!!!!!!!!!!!!!1S
@@ -16,6 +17,16 @@ import 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/useColorScheme';
 
 SplashScreen.preventAutoHideAsync();
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+    shouldShowBanner: true,
+    shouldShowList: true, 
+  }),
+});
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();

@@ -1,25 +1,35 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
-import { getDatabase } from 'firebase/database';
-import { initializeAuth, getReactNativePersistence } from 'firebase/auth';
-import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  getAuth,
+  initializeAuth,
 
+  // @ts-ignore
+  getReactNativePersistence,
+} from "firebase/auth";
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Your Firebase config object
 const firebaseConfig = {
-    apiKey: "AIzaSyAcSkuuVNHnDrx0Mshvmd30fO2By81bgcc",
-    authDomain: "habitbuilder-aa233.firebaseapp.com",
-    projectId: "habitbuilder-aa233",
-    storageBucket: "habitbuilder-aa233.firebasestorage.app",
-    messagingSenderId: "385514200471",
-    appId: "1:385514200471:web:919a7c36369e59ec4138d2",
-    measurementId: "G-21315E5T1T"
-  };
+  apiKey: "AIzaSyAcSkuuVNHnDrx0Mshvmd30fO2By81bgcc",
+  authDomain: "habitbuilder-aa233.firebaseapp.com",
+  projectId: "habitbuilder-aa233",
+  storageBucket: "habitbuilder-aa233.appspot.com",
+  messagingSenderId: "385514200471",
+  appId: "1:385514200471:web:919a7c36369e59ec4138d2",
+  measurementId: "G-21315E5T1T1"
+};
 
+// Initialize Firebase app
 const app = initializeApp(firebaseConfig);
 
+// Firebase Auth without persistence
 const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(ReactNativeAsyncStorage),  // Correctly configure persistence
+  persistence: getReactNativePersistence(AsyncStorage),
 });
 
+// Firestore
 const firestore = getFirestore(app);
-export { auth, firestore };
+
+// Export instances
+export { app, auth, firestore };
